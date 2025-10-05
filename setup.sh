@@ -48,6 +48,7 @@ install_kyverno() {
 
   helm upgrade --install kyverno kyverno/kyverno \
     -n kyverno --create-namespace \
+    --set config.enablePolicyException=true \
     --atomic >/dev/null
 
   # Give Kyverno controllers full admin (dev-only, very permissive)
