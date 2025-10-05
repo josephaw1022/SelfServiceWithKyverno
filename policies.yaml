@@ -110,8 +110,8 @@ spec:
                   cpu: "1"
                   memory: "1Gi"
                 min:
-                  cpu: "100m"
-                  memory: "128Mi"
+                  cpu: "0m"
+                  memory: "0Mi"
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
