@@ -47,6 +47,7 @@ cleanup_kubeconfig() {
 delete_local_artifacts() {
   say "Removing generated key, cert, and CSR files..."
   rm -f ./*.key ./*.crt ./*.csr ./*-csr.yaml >/dev/null 2>&1 || true
+  rm -rf ./create-cluster-output >/dev/null 2>&1 || true
   say "Local artifacts removed."
 }
 
