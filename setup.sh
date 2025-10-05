@@ -47,6 +47,57 @@ ensure_kind_cluster(){
   kubectl config use-context "${CTX_NAME}" >/dev/null
 }
 
+
+
+install_prometheus_stack() {
+  say "Installing kube-prometheus-stack into kube-system..."
+
+  helm repo add prometheus-community https://prometheus-community.github.io/helm-charts >/dev/null 2>&1 || true
+  helm repo update >/dev/null 2>&1 || true
+
+  helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+    -n kube-system \
+    --version 77.13.0 \
+    --atomic \
+    --create-namespace \
+    -f /dev/stdin <<EOF
+tolerations:
+  - key: "tenant"
+    operator: "Equal"
+    value: "david"
+    effect: "NoSchedule"
+  - key: "tenant"
+    operator: "Equal"
+    value: "sarah"
+    effect: "NoSchedule"
+
+prometheus:
+  prometheusSpec:
+    tolerations:
+      - key: "tenant"
+        operator: "Equal"
+        value: "david"
+        effect: "NoSchedule"
+      - key: "tenant"
+        operator: "Equal"
+        value: "sarah"
+        effect: "NoSchedule"
+
+alertmanager:
+  alertmanagerSpec:
+    tolerations:
+      - key: "tenant"
+        operator: "Equal"
+        value: "david"
+        effect: "NoSchedule"
+      - key: "tenant"
+        operator: "Equal"
+        value: "sarah"
+        effect: "NoSchedule"
+EOF
+}
+
+
 install_kyverno() {
   say "Installing Kyverno via Helm..."
   helm repo add kyverno https://kyverno.github.io/kyverno >/dev/null 2>&1 || true
@@ -195,6 +246,7 @@ main(){
   preflight
   ensure_outdir
   ensure_kind_cluster
+  install_prometheus_stack
   install_kyverno_stack
   apply_base_kyverno_policies
   create_namespace_rbac_for_users
