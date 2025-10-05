@@ -379,3 +379,51 @@ spec:
       validate:
         message: "Creating workloads in this namespace is not allowed."
         deny: {}
+
+---
+
+---
+apiVersion: kyverno.io/v2
+kind: PolicyException
+metadata:
+  name: allow-olm-and-operators
+  namespace: kyverno
+spec:
+  match:
+    any:
+      # exempt creating/updating the OLM/operator namespaces themselves
+      - resources:
+          kinds: ["Namespace"]
+          names: ["olm", "operators"]
+          operations: ["CREATE", "UPDATE"]
+      # exempt resources created/updated inside those namespaces
+      - resources:
+          kinds:
+            - Deployment
+            - StatefulSet
+            - DaemonSet
+            - Job
+            - CronJob
+            - ReplicaSet
+            - Pod
+            - NetworkPolicy
+            - ResourceQuota
+            - LimitRange
+            - PodDisruptionBudget
+          namespaces: ["olm", "operators"]
+          operations: ["CREATE", "UPDATE"]
+  exceptions:
+    - policyName: label-pss-on-new-ns
+      ruleNames: ["label-pss"]
+    - policyName: generate-limitrange-per-namespace
+      ruleNames: ["generate-limitrange"]
+    - policyName: generate-resourcequota-per-namespace
+      ruleNames: ["generate-resourcequota"]
+    - policyName: generate-netpol-default-deny-per-namespace
+      ruleNames: ["generate-netpol-default-deny"]
+    - policyName: enforce-restricted-securitycontext
+      ruleNames: ["add-restricted-securitycontext"]
+    - policyName: create-default-pdb
+      ruleNames: ["create-default-pdb"]
+    - policyName: block-namespace-with-tld
+      ruleNames: ["deny-tld-namespaces"]
