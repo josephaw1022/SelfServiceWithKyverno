@@ -4,17 +4,15 @@ kind: ClusterPolicy
 metadata:
   name: label-pss-on-new-ns
   annotations:
-    policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/title: Add Pod Security Standards Labels
+    policies.kyverno.io/category: Security
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
-    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      Automatically applies Pod Security Standards labels to new namespaces to enforce
+      baseline security policies. This includes enforce, audit, and warn labels with
+      appropriate versions for pod security admission controls.
 spec:
   validationFailureAction: Audit
   background: false
@@ -55,17 +53,15 @@ kind: ClusterPolicy
 metadata:
   name: generate-limitrange-per-namespace
   annotations:
-    policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/title: Generate LimitRange Per Namespace
+    policies.kyverno.io/category: Resource Management
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
-    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      Automatically generates a LimitRange resource in each new namespace to enforce
+      default CPU and memory limits and requests for containers. This ensures proper
+      resource governance and prevents resource exhaustion in the cluster.
 spec:
   validationFailureAction: Audit
   background: false
@@ -118,17 +114,16 @@ kind: ClusterPolicy
 metadata:
   name: generate-resourcequota-per-namespace
   annotations:
-    policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/title: Generate ResourceQuota Per Namespace
+    policies.kyverno.io/category: Resource Management
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
-    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      Automatically generates a ResourceQuota in each new namespace to enforce
+      limits on CPU, memory, storage, and object counts. This ensures fair resource
+      allocation across namespaces and prevents any single namespace from consuming
+      excessive cluster resources.
 spec:
   validationFailureAction: Audit
   background: false
@@ -174,27 +169,27 @@ spec:
               configmaps: "25"
               secrets: "25"
 ---
+
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
-  name: generate-netpol-default-deny-per-namespace
+  name: generate-network-policy-default-deny-per-namespace
   annotations:
-    policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/title: Generate Default Deny NetworkPolicy
+    policies.kyverno.io/category: Security
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
-    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      Automatically generates a default deny-all NetworkPolicy in each new namespace
+      to enforce baseline network isolation. Namespaces can opt out by labeling
+      themselves with either
+      'network.kubernetes.io/skip-default-network-policy=true' or 'skip-network-policy=true'.
 spec:
   validationFailureAction: Audit
   background: false
   rules:
-    - name: generate-netpol-default-deny
+    - name: generate-network-policy-default-deny
       match:
         any:
           - resources:
@@ -208,12 +203,21 @@ spec:
                   "kube-public",
                   "kube-node-lease",
                   "kyverno",
+                  "olm",
+                  "cert-manager",
+                  "operators"
                 ]
       preconditions:
         all:
           - key: "{{ request.operation }}"
             operator: Equals
             value: CREATE
+          - key: "{{ request.object.metadata.labels.\"network.kubernetes.io/skip-default-network-policy\" || 'false' }}"
+            operator: NotEquals
+            value: "true"
+          - key: "{{ request.object.metadata.labels.\"skip-network-policy\" || 'false' }}"
+            operator: NotEquals
+            value: "true"
       generate:
         apiVersion: networking.k8s.io/v1
         kind: NetworkPolicy
@@ -225,26 +229,24 @@ spec:
             podSelector: {}
             policyTypes: ["Ingress", "Egress"]
 
+
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: enforce-restricted-securitycontext
   annotations:
-    policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/title: Enforce Restricted Security Context
+    policies.kyverno.io/category: Security
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Deployment
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      Automatically applies restrictive security context settings to Deployments to
+      enhance container security. This includes running as non-root, dropping all
+      capabilities, preventing privilege escalation, and using the default seccomp profile.
 spec:
-  validationFailureAction: Audit # use Enforce to block instead of warn
-  background: true
+  background: false
   rules:
     - name: add-restricted-securitycontext
       match:
@@ -272,14 +274,13 @@ spec:
 
 ---
 
-
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: create-default-pdb
   annotations:
     policies.kyverno.io/title: Add Pod Disruption Budget
-    policies.kyverno.io/category: Sample
+    policies.kyverno.io/category: Availability
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Deployment
@@ -306,7 +307,6 @@ spec:
         spec:
           minAvailable: 1
           selector: "{{request.object.spec.selector}}"
-
 
 ---
 
@@ -340,11 +340,7 @@ spec:
           metadata:
             name: "!*.com|!*.org|!*.net|!*.io|!*.co|!*.gov|!*.edu|!*.mil|!*.biz|!*.info|!*.xyz|!*.tech|!*.dev|!*.app|!*.ai|!*.me|!*.us|!*.uk|!*.ca|!*.au|!*.de|!*.jp|!*.fr|!*.in|!*.cn"
 
-
-
-
 ---
-
 
 apiVersion: kyverno.io/v1
 kind: Policy
@@ -380,7 +376,6 @@ spec:
         message: "Creating workloads in this namespace is not allowed."
         deny: {}
 
----
 
 ---
 apiVersion: kyverno.io/v2
@@ -391,12 +386,10 @@ metadata:
 spec:
   match:
     any:
-      # exempt creating/updating the OLM/operator namespaces themselves
       - resources:
           kinds: ["Namespace"]
           names: ["olm", "operators"]
           operations: ["CREATE", "UPDATE"]
-      # exempt resources created/updated inside those namespaces
       - resources:
           kinds:
             - Deployment
@@ -419,11 +412,143 @@ spec:
       ruleNames: ["generate-limitrange"]
     - policyName: generate-resourcequota-per-namespace
       ruleNames: ["generate-resourcequota"]
-    - policyName: generate-netpol-default-deny-per-namespace
-      ruleNames: ["generate-netpol-default-deny"]
+    - policyName: generate-network-policy-default-deny-per-namespace
+      ruleNames: ["generate-network-policy-default-deny"]
     - policyName: enforce-restricted-securitycontext
       ruleNames: ["add-restricted-securitycontext"]
     - policyName: create-default-pdb
       ruleNames: ["create-default-pdb"]
     - policyName: block-namespace-with-tld
       ruleNames: ["deny-tld-namespaces"]
+
+---
+
+# Policies for multi-tenant scheduling based on user who created namespace
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: label-namespace-with-tenant
+spec:
+  background: false
+  validationFailureAction: Enforce
+  rules:
+    - name: add-tenant-label-from-user
+      match:
+        any:
+          - resources:
+              kinds: ["Namespace"]
+              operations: ["CREATE"]
+      exclude:
+        any:
+          - resources:
+              names: ["kube-system","kyverno","olm","cert-manager","operators"]
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.labels.\"tenant-policy\" || '' }}"
+            operator: NotEquals
+            value: "disabled"
+          - key: "{{ request.object.metadata.labels.tenant || '' }}"
+            operator: Equals
+            value: ""
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            labels:
+              tenant: "{{ request.userInfo.username }}"
+
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-tenant-pod-mutation
+spec:
+  background: false
+  validationFailureAction: Enforce
+  rules:
+    - name: create-ns-policy-to-pin-pods
+      match:
+        any:
+          - resources:
+              kinds: ["Namespace"]
+              operations: ["CREATE"]
+      exclude:
+        any:
+          - resources:
+              names: ["kube-system","kyverno","olm","cert-manager","operators"]
+      preconditions:
+        all:
+          - key: "{{ request.object.metadata.labels.tenant || '' }}"
+            operator: NotEquals
+            value: ""
+          - key: "{{ request.object.metadata.labels.\"tenant-policy\" || '' }}"
+            operator: NotEquals
+            value: "disabled"
+      generate:
+        apiVersion: kyverno.io/v1
+        kind: Policy
+        name: enforce-tenant-scheduling
+        namespace: "{{ request.object.metadata.name }}"
+        synchronize: true
+        data:
+          apiVersion: kyverno.io/v1
+          kind: Policy
+          metadata:
+            name: enforce-tenant-scheduling
+          spec:
+            validationFailureAction: Enforce
+            rules:
+              - name: set-node-selector-and-toleration
+                match:
+                  any:
+                    - resources:
+                        kinds: ["Pod"]
+                mutate:
+                  patchesJson6902: |-
+                    - op: add
+                      path: /spec/nodeSelector
+                      value:
+                        tenant: "{{ request.object.metadata.labels.tenant }}"
+                    - op: add
+                      path: /spec/tolerations/-
+                      value:
+                        key: "tenant"
+                        operator: "Equal"
+                        value: "{{ request.object.metadata.labels.tenant }}"
+                        effect: "NoSchedule"
+
+
+
+---
+
+
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: bind-namespace-creator-to-namespace-admin
+spec:
+  background: false
+  rules:
+    - name: bind-creator-to-ns-admin
+      match:
+        any:
+          - resources:
+              kinds:
+                - Namespace
+              operations:
+                - CREATE
+      generate:
+        apiVersion: rbac.authorization.k8s.io/v1
+        kind: RoleBinding
+        name: ns-owner-admin
+        namespace: "{{ request.object.metadata.name }}"
+        synchronize: true
+        data:
+          roleRef:
+            apiGroup: rbac.authorization.k8s.io
+            kind: ClusterRole
+            name: admin
+          subjects:
+            - kind: User
+              name: "{{ request.userInfo.username }}"
