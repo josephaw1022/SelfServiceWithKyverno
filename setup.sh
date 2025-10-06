@@ -297,22 +297,18 @@ install_ingress_nginx_nodeport() {
   log "INFO" "Installing ingress-nginx with NodePort service"
   helm repo add ingress-nginx https://kubernetes.github.io/ingress-nginx >/dev/null 2>&1 || true
   helm repo update >/dev/null 2>&1 || true
-  helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx -n ingress-nginx --create-namespace -f - <<EOF
+  helm upgrade --install ingress-nginx ingress-nginx/ingress-nginx \
+    --namespace ingress-nginx \
+    --create-namespace \
+    --values - <<EOF
 controller:
+  ingressClassResource:
+    default: true
   service:
     type: NodePort
     nodePorts:
       http: 30080
       https: 30443
-  publishService:
-    enabled: true
-  ingressClassResource:
-    default: true
-  config:
-    ssl-redirect: "false"
-
-defaultBackend:
-  enabled: true
 EOF
   log "INFO" "ingress-nginx installation complete"
 }
