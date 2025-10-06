@@ -1,0 +1,30 @@
+---
+
+apiVersion: v1
+kind: Namespace
+metadata:
+  name: kyverno-config
+
+
+---
+
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: kyverno-exclusions
+  namespace: kyverno-config
+data:
+  excluded-namespaces: '[
+    "kube-system",
+    "kube-public",
+    "kube-node-lease",
+    "kyverno",
+    "olm",
+    "cert-manager",
+    "operators",
+    "reloader",
+    "external-secrets",
+    "ingress-nginx",
+    "kyverno-policy-reporter",
+    "kyverno-config"
+  ]'

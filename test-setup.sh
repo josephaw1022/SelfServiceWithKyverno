@@ -65,7 +65,8 @@ deploy_nginx() {
   local ctx="$1"
   local ns="$2"
   local user="$3"
-  local name="${user}-nginx"
+  local timestamp="$4"
+  local name="${user}-nginx-${timestamp}"
 
   kubectl --context="${ctx}" apply -f - <<EOF
 apiVersion: apps/v1
@@ -109,10 +110,31 @@ spec:
   ports:
     - port: 80
       targetPort: 80
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${name}
+  namespace: ${ns}
+  annotations:
+    cert-manager.io/cluster-issuer: "root-issuer"
+spec:
+
+  rules:
+    - host: ${name}.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${name}
+                port:
+                  number: 80
 EOF
 
   kubectl --context="${ctx}" -n "${ns}" rollout status deploy/${name} --timeout=180s
-  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} -o wide
+  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} ingress/${name} -o wide
 }
 
 
@@ -121,7 +143,8 @@ deploy_aspnet() {
   local ctx="$1"
   local ns="$2"
   local user="$3"
-  local name="${user}-aspnet"
+  local timestamp="$4"
+  local name="${user}-aspnet-${timestamp}"
 
   kubectl --context="${ctx}" apply -f - <<EOF
 apiVersion: apps/v1
@@ -157,10 +180,31 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${name}
+  namespace: ${ns}
+  annotations:
+    cert-manager.io/cluster-issuer: "root-issuer"
+spec:
+
+  rules:
+    - host: ${name}.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${name}
+                port:
+                  number: 80
 EOF
 
   kubectl --context="${ctx}" -n "${ns}" rollout status deploy/${name} --timeout=180s
-  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} -o wide
+  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} ingress/${name} -o wide
 }
 
 
@@ -169,7 +213,8 @@ deploy_apache() {
   local ctx="$1"
   local ns="$2"
   local user="$3"
-  local name="${user}-apache"
+  local timestamp="$4"
+  local name="${user}-apache-${timestamp}"
 
   kubectl --context="${ctx}" apply -f - <<EOF
 apiVersion: apps/v1
@@ -224,10 +269,30 @@ spec:
   ports:
     - port: 80
       targetPort: 8080
+---
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ${name}
+  namespace: ${ns}
+  annotations:
+    cert-manager.io/cluster-issuer: "root-issuer"
+spec:
+  rules:
+    - host: ${name}.localhost
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: ${name}
+                port:
+                  number: 80
 EOF
 
   kubectl --context="${ctx}" -n "${ns}" rollout status deploy/${name} --timeout=180s
-  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} -o wide
+  kubectl --context="${ctx}" -n "${ns}" get deploy/${name} svc/${name} ingress/${name} -o wide
 }
 
 
@@ -236,18 +301,19 @@ deploy_random_app() {
   local ctx="$1"
   local ns="$2"
   local user="$3"
+  local timestamp="$4"
   local pick="${CHOICES[RANDOM % ${#CHOICES[@]}]}"
 
   say "Random pick for '${user}': ${pick}"
   case "${pick}" in
     nginx)
-      deploy_nginx "${ctx}" "${ns}" "${user}"
+      deploy_nginx "${ctx}" "${ns}" "${user}" "${timestamp}"
       ;;
     aspnet)
-      deploy_aspnet "${ctx}" "${ns}" "${user}"
+      deploy_aspnet "${ctx}" "${ns}" "${user}" "${timestamp}"
       ;;
     apache)
-      deploy_apache "${ctx}" "${ns}" "${user}"
+      deploy_apache "${ctx}" "${ns}" "${user}" "${timestamp}"
       ;;
     *)
       die "unknown app: ${pick}"
@@ -278,14 +344,15 @@ main() {
   require_bin kubectl
 
   for u in "${USERS[@]}"; do
-    ns="${u}-created-ns-test-$(date +%s)"
+    local timestamp="$(date +%s)"
+    ns="${u}-created-ns-test-${timestamp}"
     use_label=$([ $((RANDOM % 2)) -eq 0 ] && echo true || echo false)
 
     say "Creating namespace '${ns}' as ${u} (skip-network-policy=${use_label})"
     create_ns_with_optional_skip_label "${u}" "${ns}" "${use_label}"
     wait_for_rolebinding "${ns}"
     wait_for_admin "${u}" "${ns}"
-    deploy_random_app "${u}" "${ns}" "${u}"
+    deploy_random_app "${u}" "${ns}" "${u}" "${timestamp}"
     echo
   done
 

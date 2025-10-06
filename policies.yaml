@@ -6,13 +6,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Add Pod Security Standards Labels
     policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: medium
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      Automatically applies Pod Security Standards labels to new namespaces to enforce
-      baseline security policies. This includes enforce, audit, and warn labels with
-      appropriate versions for pod security admission controls.
+      Automatically applies Pod Security Standards labels to new namespaces to enforce baseline security policies. This includes enforce, audit, and warn labels with appropriate versions for pod security admission controls.
 spec:
   validationFailureAction: Audit
   background: false
@@ -25,13 +24,7 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
-                [
-                  "kube-system",
-                  "kube-public",
-                  "kube-node-lease",
-                  "kyverno",
-                ]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
           - key: "{{ request.operation }}"
@@ -55,13 +48,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Generate LimitRange Per Namespace
     policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      Automatically generates a LimitRange resource in each new namespace to enforce
-      default CPU and memory limits and requests for containers. This ensures proper
-      resource governance and prevents resource exhaustion in the cluster.
+      Automatically generates a LimitRange resource in each new namespace to enforce default CPU and memory limits and requests for containers. This ensures proper resource governance and prevents resource exhaustion in the cluster.
 spec:
   validationFailureAction: Audit
   background: false
@@ -74,13 +66,7 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
-                [
-                  "kube-system",
-                  "kube-public",
-                  "kube-node-lease",
-                  "kyverno",
-                ]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
           - key: "{{ request.operation }}"
@@ -116,14 +102,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Generate ResourceQuota Per Namespace
     policies.kyverno.io/category: Resource Management
+    policies.kyverno.io/severity: medium
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      Automatically generates a ResourceQuota in each new namespace to enforce
-      limits on CPU, memory, storage, and object counts. This ensures fair resource
-      allocation across namespaces and prevents any single namespace from consuming
-      excessive cluster resources.
+      Automatically generates a ResourceQuota in each new namespace to enforce limits on CPU, memory, storage, and object counts. This ensures fair resource allocation across namespaces and prevents any single namespace from consuming excessive cluster resources.
 spec:
   validationFailureAction: Audit
   background: false
@@ -136,13 +120,7 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
-                [
-                  "kube-system",
-                  "kube-public",
-                  "kube-node-lease",
-                  "kyverno",
-                ]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
           - key: "{{ request.operation }}"
@@ -169,7 +147,56 @@ spec:
               configmaps: "25"
               secrets: "25"
 ---
-
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: block-large-images
+  annotations:
+    policies.kyverno.io/title: Block Large Images
+    policies.kyverno.io/category: Other
+    policies.kyverno.io/severity: medium
+    kyverno.io/kyverno-version: 1.6.0
+    policies.kyverno.io/minversion: 1.6.0
+    kyverno.io/kubernetes-version: "1.23"
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Pods which run containers of very large image size take longer to pull and require more space to store. A user may either inadvertently or purposefully name an image which is unusually large to disrupt operations. This policy checks the size of every container image and blocks if it is over 2 Gibibytes.
+spec:
+  validationFailureAction: Audit
+  rules:
+    - name: block-over-twogi
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
+      preconditions:
+        all:
+          - key: "{{request.operation || 'BACKGROUND'}}"
+            operator: NotEquals
+            value: DELETE
+      validate:
+        message: "images with size greater than 2Gi not allowed"
+        foreach:
+          - list: "request.object.spec.containers"
+            context:
+              - name: imageSize
+                imageRegistry:
+                  reference: "{{ element.image }}"
+                  # Note that we need to use `to_string` here to allow kyverno to treat it like a resource quantity of type memory
+                  # the total size of an image as calculated by docker is the total sum of its layer sizes
+                  jmesPath: "to_string(sum(manifest.layers[*].size))"
+            deny:
+              conditions:
+                all:
+                  - key: "2Gi"
+                    operator: LessThan
+                    value: "{{imageSize}}"
+---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -177,14 +204,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Generate Default Deny NetworkPolicy
     policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      Automatically generates a default deny-all NetworkPolicy in each new namespace
-      to enforce baseline network isolation. Namespaces can opt out by labeling
-      themselves with either
-      'network.kubernetes.io/skip-default-network-policy=true' or 'skip-network-policy=true'.
+      Automatically generates a default deny-all NetworkPolicy in each new namespace to enforce baseline network isolation. Namespaces can opt out by labeling themselves with either 'network.kubernetes.io/skip-default-network-policy=true' or 'skip-network-policy=true'.
 spec:
   validationFailureAction: Audit
   background: false
@@ -197,25 +222,16 @@ spec:
       exclude:
         any:
           - resources:
-              namespaces:
-                [
-                  "kube-system",
-                  "kube-public",
-                  "kube-node-lease",
-                  "kyverno",
-                  "olm",
-                  "cert-manager",
-                  "operators"
-                ]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
           - key: "{{ request.operation }}"
             operator: Equals
             value: CREATE
-          - key: "{{ request.object.metadata.labels.\"network.kubernetes.io/skip-default-network-policy\" || 'false' }}"
+          - key: '{{ request.object.metadata.labels."network.kubernetes.io/skip-default-network-policy" || ''false'' }}'
             operator: NotEquals
             value: "true"
-          - key: "{{ request.object.metadata.labels.\"skip-network-policy\" || 'false' }}"
+          - key: '{{ request.object.metadata.labels."skip-network-policy" || ''false'' }}'
             operator: NotEquals
             value: "true"
       generate:
@@ -228,8 +244,6 @@ spec:
           spec:
             podSelector: {}
             policyTypes: ["Ingress", "Egress"]
-
-
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
@@ -238,13 +252,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Enforce Restricted Security Context
     policies.kyverno.io/category: Security
+    policies.kyverno.io/severity: high
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Deployment
     policies.kyverno.io/description: >-
-      Automatically applies restrictive security context settings to Deployments to
-      enhance container security. This includes running as non-root, dropping all
-      capabilities, preventing privilege escalation, and using the default seccomp profile.
+      Automatically applies restrictive security context settings to Deployments to enhance container security. This includes running as non-root, dropping all capabilities, preventing privilege escalation, and using the default seccomp profile.
 spec:
   background: false
   rules:
@@ -254,6 +267,10 @@ spec:
           - resources:
               kinds:
                 - Deployment
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       mutate:
         patchStrategicMerge:
           spec:
@@ -271,9 +288,7 @@ spec:
                       capabilities:
                         drop:
                           - "ALL"
-
 ---
-
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -281,35 +296,34 @@ metadata:
   annotations:
     policies.kyverno.io/title: Add Pod Disruption Budget
     policies.kyverno.io/category: Availability
+    policies.kyverno.io/severity: low
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Deployment
     policies.kyverno.io/description: >-
-      A PodDisruptionBudget limits the number of Pods of a replicated application that
-      are down simultaneously from voluntary disruptions. For example, a quorum-based
-      application would like to ensure that the number of replicas running is never brought
-      below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB)
-      for each application. This policy will create a PDB resource whenever a new Deployment is created.
+      A PodDisruptionBudget limits the number of Pods of a replicated application that are down simultaneously from voluntary disruptions. For example, a quorum-based application would like to ensure that the number of replicas running is never brought below the number needed for a quorum. As an application owner, you can create a PodDisruptionBudget (PDB) for each application. This policy will create a PDB resource whenever a new Deployment is created.
 spec:
   rules:
-  - name: create-default-pdb
-    match:
-      any:
-      - resources:
-          kinds:
-          - Deployment
-    generate:
-      apiVersion: policy/v1
-      kind: PodDisruptionBudget
-      name: "{{request.object.metadata.name}}-default-pdb"
-      namespace: "{{request.object.metadata.namespace}}"
-      data:
-        spec:
-          minAvailable: 1
-          selector: "{{request.object.spec.selector}}"
-
+    - name: create-default-pdb
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
+      generate:
+        apiVersion: policy/v1
+        kind: PodDisruptionBudget
+        name: "{{request.object.metadata.name}}-default-pdb"
+        namespace: "{{request.object.metadata.namespace}}"
+        data:
+          spec:
+            minAvailable: 1
+            selector: "{{request.object.spec.selector}}"
 ---
-
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
@@ -317,13 +331,12 @@ metadata:
   annotations:
     policies.kyverno.io/title: Block Namespace Creation with TLD
     policies.kyverno.io/category: Namespace Governance
+    policies.kyverno.io/severity: medium
     kyverno.io/kyverno-version: 1.6.2
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Namespace
     policies.kyverno.io/description: >-
-      Prevents the creation of namespaces whose names end with a top-level domain
-      such as .com, .org, .net, .io, and others. This helps avoid confusion with
-      internet domain names and enforces naming standards within the cluster.
+      Prevents the creation of namespaces whose names end with a top-level domain such as .com, .org, .net, .io, and others. This helps avoid confusion with internet domain names and enforces naming standards within the cluster.
 spec:
   validationFailureAction: Enforce
   background: false
@@ -339,9 +352,7 @@ spec:
         pattern:
           metadata:
             name: "!*.com|!*.org|!*.net|!*.io|!*.co|!*.gov|!*.edu|!*.mil|!*.biz|!*.info|!*.xyz|!*.tech|!*.dev|!*.app|!*.ai|!*.me|!*.us|!*.uk|!*.ca|!*.au|!*.de|!*.jp|!*.fr|!*.in|!*.cn"
-
 ---
-
 apiVersion: kyverno.io/v1
 kind: Policy
 metadata:
@@ -354,8 +365,7 @@ metadata:
     policies.kyverno.io/minversion: 1.6.0
     policies.kyverno.io/subject: Workloads
     policies.kyverno.io/description: >-
-      Prevents creation or updates of workloads in this namespace.
-      Intended for restricting application deployments in the default namespace.
+      Prevents creation or updates of workloads in this namespace. Intended for restricting application deployments in the default namespace.
 spec:
   validationFailureAction: Enforce
   background: false
@@ -375,8 +385,6 @@ spec:
       validate:
         message: "Creating workloads in this namespace is not allowed."
         deny: {}
-
-
 ---
 apiVersion: kyverno.io/v2
 kind: PolicyException
@@ -421,15 +429,21 @@ spec:
     - policyName: block-namespace-with-tld
       ruleNames: ["deny-tld-namespaces"]
 
----
+
 
 # Policies for multi-tenant scheduling based on user who created namespace
-
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: label-namespace-with-tenant
+  annotations:
+    policies.kyverno.io/title: Label Namespace with Tenant
+    policies.kyverno.io/category: Multi-Tenancy
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      Automatically labels new namespaces with the username of the creator to enable multi-tenant scheduling. This allows for tenant-based resource allocation and scheduling policies.
 spec:
   background: false
   validationFailureAction: Enforce
@@ -443,10 +457,10 @@ spec:
       exclude:
         any:
           - resources:
-              names: ["kube-system","kyverno","olm","cert-manager","operators"]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
-          - key: "{{ request.object.metadata.labels.\"tenant-policy\" || '' }}"
+          - key: '{{ request.object.metadata.labels."tenant-policy" || '''' }}'
             operator: NotEquals
             value: "disabled"
           - key: "{{ request.object.metadata.labels.tenant || '' }}"
@@ -457,12 +471,18 @@ spec:
           metadata:
             labels:
               tenant: "{{ request.userInfo.username }}"
-
 ---
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: generate-tenant-pod-mutation
+  annotations:
+    policies.kyverno.io/title: Generate Tenant Pod Scheduling Policy
+    policies.kyverno.io/category: Multi-Tenancy
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      Generates a namespace-scoped policy that enforces tenant-based pod scheduling by adding node selectors and tolerations to pods based on the tenant label.
 spec:
   background: false
   validationFailureAction: Enforce
@@ -476,13 +496,13 @@ spec:
       exclude:
         any:
           - resources:
-              names: ["kube-system","kyverno","olm","cert-manager","operators"]
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       preconditions:
         all:
           - key: "{{ request.object.metadata.labels.tenant || '' }}"
             operator: NotEquals
             value: ""
-          - key: "{{ request.object.metadata.labels.\"tenant-policy\" || '' }}"
+          - key: '{{ request.object.metadata.labels."tenant-policy" || '''' }}'
             operator: NotEquals
             value: "disabled"
       generate:
@@ -517,16 +537,18 @@ spec:
                         operator: "Equal"
                         value: "{{ request.object.metadata.labels.tenant }}"
                         effect: "NoSchedule"
-
-
-
 ---
-
-
 apiVersion: kyverno.io/v1
 kind: ClusterPolicy
 metadata:
   name: bind-namespace-creator-to-namespace-admin
+  annotations:
+    policies.kyverno.io/title: Bind Namespace Creator to Admin Role
+    policies.kyverno.io/category: RBAC
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Namespace
+    policies.kyverno.io/description: >-
+      Automatically creates a RoleBinding that grants the namespace creator admin permissions within their newly created namespace, enabling self-service namespace management.
 spec:
   background: false
   rules:
@@ -538,6 +560,10 @@ spec:
                 - Namespace
               operations:
                 - CREATE
+      exclude:
+        any:
+          - resources:
+              names: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
       generate:
         apiVersion: rbac.authorization.k8s.io/v1
         kind: RoleBinding
@@ -552,3 +578,137 @@ spec:
           subjects:
             - kind: User
               name: "{{ request.userInfo.username }}"
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: generate-np-when-ingress-created
+  annotations:
+    policies.kyverno.io/title: Generate Allow NetworkPolicy for Ingress
+    policies.kyverno.io/category: Networking
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Ingress
+    policies.kyverno.io/description: >-
+      When an Ingress is created, automatically generate a NetworkPolicy in the same namespace that allows ingress from anywhere and allows DNS egress to kube-dns/coredns.
+spec:
+  validationFailureAction: Audit
+  background: false
+  rules:
+    - name: generate-np-for-ingress
+      match:
+        any:
+          - resources:
+              kinds: ["Ingress"]
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
+      # Allow both CREATE and UPDATE (apply triggers)
+      preconditions:
+        all:
+          - key: "{{ request.operation }}"
+            operator: AnyIn
+            value:
+              - CREATE
+              - UPDATE
+      generate:
+        apiVersion: networking.k8s.io/v1
+        kind: NetworkPolicy
+        name: "allow-world-and-dns-for-{{ request.object.metadata.name }}"
+        namespace: "{{ request.object.metadata.namespace }}"
+        synchronize: true
+        data:
+          metadata:
+            labels:
+              kyverno.io/generated-by: "ingress/{{ request.object.metadata.name }}"
+          spec:
+            podSelector: {}
+            policyTypes:
+              - Ingress
+              - Egress
+            ingress:
+              - from:
+                  - ipBlock:
+                      cidr: 0.0.0.0/0
+            egress:
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+                    podSelector:
+                      matchLabels:
+                        k8s-app: kube-dns
+                ports:
+                  - protocol: UDP
+                    port: 53
+              - to:
+                  - namespaceSelector:
+                      matchLabels:
+                        kubernetes.io/metadata.name: kube-system
+                    podSelector:
+                      matchLabels:
+                        k8s-app: coredns
+                ports:
+                  - protocol: UDP
+                    port: 53
+# =========================================
+# Reloader - Restart Pods on ConfigMap/Secret Change
+# =========================================
+---
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: add-reloader-annotation-when-using-configs
+  annotations:
+    policies.kyverno.io/title: Add Reloader Annotation When Using Configs or Secrets
+    policies.kyverno.io/category: Automation
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Deployment
+    policies.kyverno.io/description: >-
+      Automatically adds 'reloader.stakater.com/auto: "true"' to workloads that use ConfigMaps or Secrets via envFrom, env, or volumes. Ensures Reloader tracks configuration changes only for relevant workloads.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: add-reloader-annotation-when-config-or-secret-used
+      match:
+        any:
+          - resources:
+              kinds:
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+                - CronJob
+      exclude:
+        any:
+          - resources:
+              namespaces: ["kube-system","kyverno","olm","cert-manager","operators","ingress-nginx","kyverno-policy-reporter","external-secrets","reloader","kyverno-config"]
+      preconditions:
+        any:
+          # envFrom references a ConfigMap or Secret
+          - key: "{{ request.object.spec.template.spec.containers[].envFrom[].configMapRef.name || '' }}"
+            operator: NotEquals
+            value: ""
+          - key: "{{ request.object.spec.template.spec.containers[].envFrom[].secretRef.name || '' }}"
+            operator: NotEquals
+            value: ""
+          # env references ConfigMapKeyRef or SecretKeyRef
+          - key: "{{ request.object.spec.template.spec.containers[].env[].valueFrom.configMapKeyRef.name || '' }}"
+            operator: NotEquals
+            value: ""
+          - key: "{{ request.object.spec.template.spec.containers[].env[].valueFrom.secretKeyRef.name || '' }}"
+            operator: NotEquals
+            value: ""
+          # volumes reference ConfigMap or Secret
+          - key: "{{ request.object.spec.template.spec.volumes[].configMap.name || '' }}"
+            operator: NotEquals
+            value: ""
+          - key: "{{ request.object.spec.template.spec.volumes[].secret.secretName || '' }}"
+            operator: NotEquals
+            value: ""
+      mutate:
+        patchStrategicMerge:
+          metadata:
+            annotations:
+              +(reloader.stakater.com/auto): "true"
+

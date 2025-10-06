@@ -1,0 +1,175 @@
+# =========================================
+# 1. Audit - Missing Health Probes
+# =========================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: audit-health-probes
+  annotations:
+    policies.kyverno.io/title: Audit Missing Health Probes
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Audits containers that are missing readiness or liveness probes. Health probes are essential for Kubernetes to determine when containers are ready to receive traffic and when they need to be restarted.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-probes
+      match:
+        any:
+          - resources:
+              kinds: ["Deployment","StatefulSet","DaemonSet","Pod"]
+      validate:
+        message: "Containers should define both readinessProbe and livenessProbe."
+        foreach:
+          - list: "request.object.spec.template.spec.containers[] || request.object.spec.containers[]"
+            deny:
+              conditions:
+                any:
+                  - key: "{{ element.livenessProbe }}"
+                    operator: Equals
+                    value: null
+                  - key: "{{ element.readinessProbe }}"
+                    operator: Equals
+                    value: null
+
+
+
+
+
+---
+# =========================================
+# 3. Audit - Missing Datadog Labels
+# =========================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: audit-datadog-labels
+  annotations:
+    policies.kyverno.io/title: Audit Missing Datadog Labels
+    policies.kyverno.io/category: Observability
+    policies.kyverno.io/severity: low
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Audits workloads that are missing required Datadog labels for proper service tracking and observability. Required labels include environment, service, and version tags.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-datadog-labels
+      match:
+        any:
+          - resources:
+              kinds: ["Deployment","StatefulSet","DaemonSet","Pod"]
+      validate:
+        message: "Workloads should include Datadog labels: tags.datadoghq.com/env, service, and version."
+        pattern:
+          spec:
+            template:
+              metadata:
+                labels:
+                  tags.datadoghq.com/env: "?*"
+                  tags.datadoghq.com/service: "?*"
+                  tags.datadoghq.com/version: "?*"
+
+
+
+---
+# =========================================
+# 4. Audit - Latest Image Tags
+# =========================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: audit-latest-image-tags
+  annotations:
+    policies.kyverno.io/title: Audit Latest Image Tags
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      The ':latest' tag is mutable and can lead to unexpected errors if the
+      image changes. A best practice is to use immutable versioned tags.
+      This audit policy checks that images have a tag and that the tag is not 'latest'.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: require-image-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+      validate:
+        message: "Container images must include an explicit tag."
+        foreach:
+          - list: "request.object.spec.template.spec.containers[] || request.object.spec.containers[]"
+            pattern:
+              image: "*:*"
+    - name: disallow-latest-tag
+      match:
+        any:
+          - resources:
+              kinds:
+                - Pod
+                - Deployment
+                - StatefulSet
+                - DaemonSet
+      validate:
+        message: "Avoid using mutable image tag 'latest'."
+        foreach:
+          - list: "request.object.spec.template.spec.containers[] || request.object.spec.containers[]"
+            pattern:
+              image: "!*:latest"
+
+
+---
+# =========================================
+# 5. Audit - Large Image Sizes (>2Gi)
+# =========================================
+apiVersion: kyverno.io/v1
+kind: ClusterPolicy
+metadata:
+  name: audit-large-images
+  annotations:
+    policies.kyverno.io/title: Audit Large Images
+    policies.kyverno.io/category: Best Practices
+    policies.kyverno.io/severity: medium
+    policies.kyverno.io/subject: Pod
+    policies.kyverno.io/description: >-
+      Audits container images that are larger than 2GiB. Large images take longer to pull and consume more storage space, potentially impacting deployment times and cluster performance.
+spec:
+  validationFailureAction: Audit
+  background: true
+  rules:
+    - name: check-image-size
+      match:
+        any:
+          - resources:
+              kinds: ["Pod"]
+      preconditions:
+        all:
+          - key: "{{ request.operation || 'BACKGROUND' }}"
+            operator: NotEquals
+            value: DELETE
+      validate:
+        message: "Image size greater than 2Gi detected."
+        foreach:
+          - list: "request.object.spec.containers"
+            context:
+              - name: imageSize
+                imageRegistry:
+                  reference: "{{ element.image }}"
+                  jmesPath: "to_string(sum(manifest.layers[*].size))"
+            deny:
+              conditions:
+                all:
+                  - key: "2Gi"
+                    operator: LessThan
+                    value: "{{ imageSize }}"
